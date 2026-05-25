@@ -85,6 +85,9 @@ async fn delete_pod(client: Client, pod: &str, namespace: &str) -> Result<(), Bo
 
 #[tokio::main]
 async fn main() -> Result<()> {
+    rustls::crypto::ring::default_provider()
+        .install_default()
+        .ok();
     simple_logger::init_with_level(log::Level::Info)?;
     // Parse command line arguments
     let args = Args::parse();
