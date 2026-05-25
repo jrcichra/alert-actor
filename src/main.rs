@@ -106,7 +106,7 @@ async fn main() -> Result<()> {
     info!("waiting for lock...");
     loop {
         let lease = leadership.try_acquire_or_renew().await?;
-        if lease.acquired_lease {
+        if matches!(lease, kube_leader_election::LeaseLockResult::Acquired(_)) {
             break;
         }
         tokio::time::sleep(Duration::from_secs(1)).await;
@@ -118,13 +118,13 @@ async fn main() -> Result<()> {
         loop {
             tokio::time::sleep(Duration::from_secs(5)).await;
             let lease = match leadership.try_acquire_or_renew().await {
-                Result::Ok(l) => l,
+                Ok(l) => l,
                 Err(e) => {
                     warn!("background lease error: {}", e);
                     continue;
                 }
             };
-            if !lease.acquired_lease {
+            if matches!(lease, kube_leader_election::LeaseLockResult::NotAcquired(_)) {
                 info!("lost lease, exiting...");
                 process::exit(1);
             }
