@@ -61,6 +61,7 @@ struct Labels {
     namespace: Option<String>,   // Namespace might be missing in some alerts
     action: Option<String>,      // Action to take: delete_pod or webhook
     webhook_url: Option<String>, // Webhook URL for this specific alert
+    cooldown_secs: Option<String>, // Per-alert cooldown override (alert labels are always strings)
 }
 
 async fn get_alerts(alertmanager_url: &str) -> Result<Vec<Alert>, Box<dyn Error>> {
@@ -149,12 +150,27 @@ async fn main() -> Result<()> {
                     if args.alert_names.contains(&alert.labels.alertname)
                         && alert.status.state == "active"
                     {
+                        // Per-alert cooldown override via the `cooldown_secs` label, falling back to the global default
+                        let effective_cooldown = match &alert.labels.cooldown_secs {
+                            Some(secs) => match secs.parse::<u64>() {
+                                Ok(secs) => Duration::from_secs(secs),
+                                Err(_) => {
+                                    warn!(
+                                        "Alert {} has invalid cooldown_secs label '{}', using default",
+                                        alert.fingerprint, secs
+                                    );
+                                    cooldown_duration
+                                }
+                            },
+                            None => cooldown_duration,
+                        };
+
                         // Check if this alert is on cooldown (less than configured time since last processed)
                         let now = Instant::now();
                         let should_process = match alert_cooldown.get(&alert.fingerprint) {
                             Some(last_processed) => {
                                 // If more than the cooldown duration has passed since last processed, allow processing
-                                now.duration_since(*last_processed) > cooldown_duration
+                                now.duration_since(*last_processed) > effective_cooldown
                             }
                             None => true, // No cooldown record, so process it
                         };
